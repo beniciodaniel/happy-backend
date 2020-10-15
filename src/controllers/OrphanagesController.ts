@@ -3,6 +3,7 @@ import { getRepository } from "typeorm";
 import Orphanage from "../models/Orphanage";
 import orphanageView from "../views/orphanages_view";
 import * as Yup from "yup";
+import getValidationErrors from "../utils/getValidationErrors";
 
 export default {
   async index(request: Request, response: Response) {
@@ -49,42 +50,55 @@ export default {
       };
     });
 
-    const data = {
-      name,
-      latitude,
-      longitude,
-      about,
-      instructions,
-      opening_hours,
-      open_on_weekends,
-      images,
-    };
+    try {
+      const data = {
+        name,
+        latitude,
+        longitude,
+        about,
+        instructions,
+        opening_hours,
+        open_on_weekends: open_on_weekends === "true",
+        images,
+      };
 
-    const schema = Yup.object().shape({
-      name: Yup.string().required(),
-      latitude: Yup.number().required(),
-      longitude: Yup.number().required(),
-      about: Yup.string().required().max(300),
-      instructions: Yup.string().required(),
-      opening_hours: Yup.string().required(),
-      open_on_weekends: Yup.boolean().required(),
-      images: Yup.array(
-        Yup.object().shape({
-          path: Yup.string().required(),
-        })
-      ),
-    });
+      const schema = Yup.object().shape({
+        name: Yup.string().required(),
+        latitude: Yup.number(),
+        longitude: Yup.number().when("latitude", (latitude, schema) => {
+          return schema.test({
+            test: (longitude) => latitude !== 0 || longitude !== 0,
+            message: "Latitude e Longitude devem ser válidos",
+          });
+        }),
+        about: Yup.string().required().max(300),
+        instructions: Yup.string().required(),
+        opening_hours: Yup.string().required(),
+        open_on_weekends: Yup.boolean().required(),
+        images: Yup.array(
+          Yup.object().shape({
+            path: Yup.string().required(),
+          })
+        ).required(),
+      });
 
-    await schema.validate(data, {
-      abortEarly: false,
-    });
+      await schema.validate(data, {
+        abortEarly: false,
+      });
 
-    const orphanage = orphanagesRepository.create(data);
+      const orphanage = orphanagesRepository.create(data);
 
-    console.log(orphanage);
+      console.log(orphanage);
 
-    await orphanagesRepository.save(orphanage);
+      await orphanagesRepository.save(orphanage);
 
-    return response.status(201).json(orphanage);
+      return response.status(201).json(orphanage);
+    } catch (error) {
+      if (error instanceof Yup.ValidationError) {
+        const errors = getValidationErrors(error);
+        console.log(errors);
+        return response.status(400).json(errors);
+      }
+    }
   },
 };
